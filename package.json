@@ -10,7 +10,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "words:build": "node scripts/build_oxford_local_seed.mjs"
+    "words:build": "node scripts/build_oxford_local_seed.mjs",
+    "words:fill-hebrew": "node scripts/fill_missing_hebrew.mjs",
+    "words:categories": "npx --yes tsx scripts/assign_categories.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.105.1",

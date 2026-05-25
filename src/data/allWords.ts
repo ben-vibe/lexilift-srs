@@ -2,9 +2,10 @@
 // Falls back to the built-in seed_words.json for demo mode
 import oxfordSeed from "./oxford3000_seed.json";
 import fallbackSeed from "./seed_words.json";
+import { getWordCategory, type Category } from "../lib/wordCategory";
 
 export type DifficultyLevel = "A1" | "A2" | "B1" | "B2" | "C1" | "C2";
-export type Category = "Tech" | "Business" | "Travel" | "Daily Life";
+export type { Category };
 
 export type SeedWord = {
   word: string;
@@ -18,42 +19,7 @@ export type SeedWord = {
 
 export const CATEGORIES: Category[] = ["Tech", "Business", "Travel", "Daily Life"];
 
-export function getWordCategory(word: string): Category {
-  const lower = word.toLowerCase();
-  if (
-    lower.includes("tech") || lower.includes("program") || lower.includes("web") ||
-    lower.includes("online") || lower.includes("screen") || lower.includes("digital") ||
-    lower.includes("data") || lower.includes("system") || lower.includes("optimize") ||
-    lower.includes("science") || lower.includes("device") || lower.includes("network") ||
-    lower.includes("code") || lower.includes("software") || lower.includes("machine") ||
-    lower.includes("innovate") || lower.includes("dynamic") || lower.includes("simulate")
-  ) {
-    return "Tech";
-  }
-  if (
-    lower.includes("money") || lower.includes("business") || lower.includes("office") ||
-    lower.includes("career") || lower.includes("company") || lower.includes("market") ||
-    lower.includes("economy") || lower.includes("revenue") || lower.includes("finance") ||
-    lower.includes("salary") || lower.includes("tax") || lower.includes("price") ||
-    lower.includes("pay") || lower.includes("work") || lower.includes("meeting") ||
-    lower.includes("negotiate") || lower.includes("contract") || lower.includes("trade") ||
-    lower.includes("budget") || lower.includes("fund") || lower.includes("yield")
-  ) {
-    return "Business";
-  }
-  if (
-    lower.includes("travel") || lower.includes("visit") || lower.includes("city") ||
-    lower.includes("island") || lower.includes("hotel") || lower.includes("mountain") ||
-    lower.includes("river") || lower.includes("map") || lower.includes("flight") ||
-    lower.includes("tour") || lower.includes("passport") || lower.includes("beach") ||
-    lower.includes("trip") || lower.includes("journey") || lower.includes("train") ||
-    lower.includes("road") || lower.includes("car") || lower.includes("walk") ||
-    lower.includes("drive") || lower.includes("explore") || lower.includes("park")
-  ) {
-    return "Travel";
-  }
-  return "Daily Life";
-}
+export { getWordCategory };
 
 // Merge Oxford seed + fallback; Oxford entries win on duplicate keys (better ranks / CEFR).
 const rawSources = [...(oxfordSeed as SeedWord[]), ...(fallbackSeed as SeedWord[])];
@@ -67,7 +33,7 @@ for (const w of rawSources) {
     seen.add(key);
     ALL_WORDS.push({
       ...w,
-      category: w.category || getWordCategory(w.word),
+      category: w.category || getWordCategory(w.word, w.example_sentence),
     });
   }
 }
