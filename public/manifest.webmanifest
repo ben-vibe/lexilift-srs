@@ -1,0 +1,17 @@
+{
+  "short_name": "LexiLift",
+  "name": "LexiLift SRS - English Vocabulary Builder",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/3233/3233481.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#f5efe4",
+  "theme_color": "#020617",
+  "display": "standalone",
+  "scope": "/"
+}
