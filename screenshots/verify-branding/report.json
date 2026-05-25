@@ -1,0 +1,50 @@
+{
+  "base": "http://localhost:5175",
+  "allOk": true,
+  "checks": [
+    {
+      "url": "/logo-lexilift.png",
+      "ok": true,
+      "status": 200
+    },
+    {
+      "url": "/icons/icon-32.png",
+      "ok": true,
+      "status": 200
+    },
+    {
+      "url": "/icons/icon-192.png",
+      "ok": true,
+      "status": 200
+    },
+    {
+      "url": "/icons/icon-512.png",
+      "ok": true,
+      "status": 200
+    },
+    {
+      "url": "/manifest.webmanifest",
+      "ok": true,
+      "status": 200
+    },
+    {
+      "check": "home_logo_visible",
+      "ok": true,
+      "logoSrc": "/logo-lexilift.png",
+      "natural": {
+        "w": 512,
+        "h": 512
+      }
+    },
+    {
+      "check": "manifest_icons_local",
+      "ok": true,
+      "icons": [
+        "/icons/icon-192.png",
+        "/icons/icon-512.png",
+        "/icons/icon-512.png"
+      ]
+    }
+  ],
+  "screenshots": "/private/tmp/lexilift-pw/screenshots/verify-branding"
+}
