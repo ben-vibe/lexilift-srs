@@ -15,7 +15,6 @@ import {
   Plus,
   RotateCcw,
   Shuffle,
-  Sparkles,
   Trophy,
   User,
   Volume2,
@@ -459,12 +458,18 @@ function HomeScreen({
 
   return (
     <div className="flex h-full flex-col px-4 pb-28 pt-4">
-      <div className="mb-6">
-        <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
-          <Sparkles className="h-4 w-4" />
+      <div className="mb-6 text-center">
+        <img
+          src="/logo-lexilift.png"
+          alt="LexiLift — Learn, Study, Words, English"
+          className="mx-auto h-28 w-28 rounded-3xl object-cover shadow-lg ring-2 ring-white/80 sm:h-32 sm:w-32"
+          width={128}
+          height={128}
+        />
+        <p className="mt-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
           LexiLift SRS
-        </div>
-        <h1 className="text-4xl font-black text-slate-950">Dashboard</h1>
+        </p>
+        <h1 className="mt-1 text-4xl font-black text-slate-950">Dashboard</h1>
       </div>
 
       <div className="mb-6 grid grid-cols-2 gap-4">
@@ -768,9 +773,18 @@ function ProfileScreen({
 
         {/* PWA Section */}
         <div className="rounded-2xl bg-white p-5 shadow-sm">
-          <h3 className="mb-3 font-bold text-slate-950">Install PWA App</h3>
+          <div className="mb-3 flex items-center gap-3">
+            <img
+              src="/icons/icon-192.png"
+              alt=""
+              className="h-12 w-12 rounded-xl object-cover"
+              width={48}
+              height={48}
+            />
+            <h3 className="font-bold text-slate-950">Install LexiLift App</h3>
+          </div>
           <p className="text-xs text-slate-600">
-            For native-like Google Play Store mobile experience, use "Add to Home Screen" option in your browser menu.
+            Use &quot;Add to Home Screen&quot; in your browser menu — the app icon matches this logo.
           </p>
         </div>
 
