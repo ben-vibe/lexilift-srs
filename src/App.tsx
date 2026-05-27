@@ -820,18 +820,51 @@ function summarizeDay(log: StudyLog, dayKey: string): JournalDaySummary {
   };
 }
 
+function JournalWordList({
+  words,
+  tone,
+}: {
+  words: AppWord[];
+  tone: "known" | "not_yet";
+}) {
+  const toneStyles =
+    tone === "known"
+      ? "border-emerald-100 bg-emerald-50 text-emerald-800"
+      : "border-red-100 bg-red-50 text-red-800";
+
+  return (
+    <div className="mt-2 space-y-2">
+      {words.map((word) => (
+        <div
+          key={word.id}
+          className={`rounded-xl border px-3 py-2 ${toneStyles}`}
+        >
+          <p className="font-bold">{word.word}</p>
+          <p className="mt-0.5 text-sm opacity-80" dir="rtl">
+            {word.translation}
+          </p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function JournalScreen({
   studyLog,
   allWords,
   dailyGoal,
   onPracticeDayNotYet,
   onPracticeAllNotYet,
+  onPracticeDayKnown,
+  onPracticeAllKnown,
 }: {
   studyLog: StudyLog;
   allWords: AppWord[];
   dailyGoal: number;
   onPracticeDayNotYet: (dayKey: string) => void;
   onPracticeAllNotYet: () => void;
+  onPracticeDayKnown: (dayKey: string) => void;
+  onPracticeAllKnown: () => void;
 }) {
   const [selectedDay, setSelectedDay] = useState<Date>(new Date());
 
@@ -853,6 +886,15 @@ function JournalScreen({
     for (const key of dayKeys) {
       const summary = summarizeDay(studyLog, key);
       for (const id of summary.notYetWordIds) set.add(id);
+    }
+    return Array.from(set);
+  }, [dayKeys, studyLog]);
+
+  const allKnownIds = useMemo(() => {
+    const set = new Set<string>();
+    for (const key of dayKeys) {
+      const summary = summarizeDay(studyLog, key);
+      for (const id of summary.knownWordIds) set.add(id);
     }
     return Array.from(set);
   }, [dayKeys, studyLog]);
@@ -940,6 +982,20 @@ function JournalScreen({
           >
             Practice Not yet (all days)
           </button>
+          <button
+            onClick={() => onPracticeDayKnown(selectedDayKey)}
+            disabled={knownWords.length === 0}
+            className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-black text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-300"
+          >
+            Practice I know (this day)
+          </button>
+          <button
+            onClick={onPracticeAllKnown}
+            disabled={allKnownIds.length === 0}
+            className="rounded-xl border border-emerald-200 bg-white px-4 py-3 text-sm font-black text-emerald-700 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:text-slate-300"
+          >
+            Practice I know (all days)
+          </button>
         </div>
       </div>
 
@@ -949,13 +1005,7 @@ function JournalScreen({
           {knownWords.length === 0 ? (
             <p className="mt-2 text-sm text-slate-500">No words marked as known on this day.</p>
           ) : (
-            <div className="mt-2 flex flex-wrap gap-2">
-              {knownWords.map((word) => (
-                <span key={word.id} className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">
-                  {word.word}
-                </span>
-              ))}
-            </div>
+            <JournalWordList words={knownWords} tone="known" />
           )}
         </div>
         <div className="rounded-2xl bg-white p-4 shadow-sm">
@@ -963,13 +1013,7 @@ function JournalScreen({
           {notYetWords.length === 0 ? (
             <p className="mt-2 text-sm text-slate-500">No words marked as not yet on this day.</p>
           ) : (
-            <div className="mt-2 flex flex-wrap gap-2">
-              {notYetWords.map((word) => (
-                <span key={word.id} className="rounded-full bg-red-100 px-3 py-1 text-xs font-bold text-red-700">
-                  {word.word}
-                </span>
-              ))}
-            </div>
+            <JournalWordList words={notYetWords} tone="not_yet" />
           )}
         </div>
       </div>
@@ -1404,6 +1448,25 @@ export default function App() {
     setActiveTab("study");
   };
 
+  const handlePracticeDayKnown = (dayKey: string) => {
+    const summary = summarizeDay(studyLog, dayKey);
+    if (summary.knownWordIds.length === 0) return;
+    setPracticeQueueIds(summary.knownWordIds);
+    setActiveTab("study");
+  };
+
+  const handlePracticeAllKnown = () => {
+    const set = new Set<string>();
+    for (const dayKey of Object.keys(studyLog)) {
+      const summary = summarizeDay(studyLog, dayKey);
+      for (const id of summary.knownWordIds) set.add(id);
+    }
+    const ids = Array.from(set);
+    if (ids.length === 0) return;
+    setPracticeQueueIds(ids);
+    setActiveTab("study");
+  };
+
   const handleAddWord = (wordId: string) => {
     setProgress((current) => ({
       ...current,
@@ -1637,6 +1700,8 @@ export default function App() {
                 dailyGoal={settings.dailyGoal}
                 onPracticeDayNotYet={handlePracticeDayNotYet}
                 onPracticeAllNotYet={handlePracticeAllNotYet}
+                onPracticeDayKnown={handlePracticeDayKnown}
+                onPracticeAllKnown={handlePracticeAllKnown}
               />
             </motion.div>
           )}
