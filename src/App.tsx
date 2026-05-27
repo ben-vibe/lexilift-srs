@@ -25,6 +25,8 @@ import {
   ArrowLeftRight,
   Filter,
   Flame,
+  Maximize2,
+  Minimize2,
   Shield,
   Trash2,
   LogOut,
@@ -81,6 +83,7 @@ type Tab = "home" | "study" | "explore" | "journal" | "profile";
 type AppWord = SeedWord & { id: string; custom?: boolean };
 type ProgressMap = Record<string, WordProgress>;
 type QuickState = "idle" | "loading" | "linked" | "created" | "error";
+type SessionStats = { known: number; notYet: number };
 
 const fallbackTranslations: Record<string, string> = {
   build: "לבנות", learn: "ללמוד", study: "ללמוד",
@@ -115,6 +118,8 @@ function SwipeCard({
   onFlip,
   isFlipped,
   isReverse,
+  onEnterFocus,
+  showFocusButton,
 }: {
   word: AppWord;
   progress: WordProgress | undefined;
@@ -122,9 +127,11 @@ function SwipeCard({
   onFlip: () => void;
   isFlipped: boolean;
   isReverse: boolean;
+  onEnterFocus?: () => void;
+  showFocusButton?: boolean;
 }) {
   const x = useMotionValue(0);
-  const rotate = useTransform(x, [-200, 200], [-15, 15]);
+  const rotate = useTransform(x, [-200, 200], [-8, 8]);
   const opacityLeft = useTransform(x, [-200, -50, 0], [1, 0.5, 0]);
   const opacityRight = useTransform(x, [0, 50, 200], [0, 0.5, 1]);
   const scale = useTransform(x, [-200, 0, 200], [0.95, 1, 0.95]);
@@ -188,12 +195,24 @@ function SwipeCard({
               <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-bold">
                 {word.difficulty_level}
               </span>
-              <button
-                onClick={(e) => { e.stopPropagation(); speakWord(word.word); }}
-                className="flex h-11 w-11 items-center justify-center rounded-full bg-white text-slate-950"
-              >
-                <Volume2 className="h-5 w-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                {showFocusButton && onEnterFocus && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onEnterFocus(); }}
+                    className="flex h-9 items-center gap-1 rounded-full bg-white/15 px-2.5 text-[10px] font-bold text-white/90 transition hover:bg-white/25"
+                    title="Focus mode"
+                  >
+                    <Maximize2 className="h-3.5 w-3.5" />
+                    Focus
+                  </button>
+                )}
+                <button
+                  onClick={(e) => { e.stopPropagation(); speakWord(word.word); }}
+                  className="flex h-11 w-11 items-center justify-center rounded-full bg-white text-slate-950"
+                >
+                  <Volume2 className="h-5 w-5" />
+                </button>
+              </div>
             </div>
 
             <div className="text-center">
@@ -255,8 +274,142 @@ function SwipeCard({
   );
 }
 
+// ==================== SESSION COMPLETE ====================
+function SessionCompleteScreen({
+  sessionStats,
+  habit,
+  dailyGoal,
+  goalMet,
+  practiceMode,
+  todayNotYetCount,
+  onDone,
+  onPracticeNotYet,
+  onBackToJournal,
+  onKeepStudying,
+  canKeepStudying,
+}: {
+  sessionStats: SessionStats;
+  habit: HabitStats;
+  dailyGoal: number;
+  goalMet: boolean;
+  practiceMode: boolean;
+  todayNotYetCount: number;
+  onDone: () => void;
+  onPracticeNotYet: () => void;
+  onBackToJournal: () => void;
+  onKeepStudying?: () => void;
+  canKeepStudying?: boolean;
+}) {
+  const total = sessionStats.known + sessionStats.notYet;
+  const title = practiceMode
+    ? "Practice complete"
+    : goalMet
+      ? "Daily goal reached"
+      : "Session complete";
+
+  return (
+    <div className="flex h-full flex-col items-center justify-center px-6 text-center">
+      <motion.div
+        initial={{ scale: 0.92, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ type: "spring", stiffness: 260, damping: 22 }}
+        className={`rounded-full p-6 ${goalMet && !practiceMode ? "bg-orange-100" : "bg-emerald-100"}`}
+      >
+        {goalMet && !practiceMode ? (
+          <motion.div
+            animate={{ scale: [1, 1.06, 1] }}
+            transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
+          >
+            <Flame className="h-12 w-12 text-orange-500" />
+          </motion.div>
+        ) : (
+          <CheckCircle2 className="h-12 w-12 text-emerald-600" />
+        )}
+      </motion.div>
+
+      <motion.h2
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.08 }}
+        className="mt-6 text-2xl font-black text-slate-950"
+      >
+        {title}
+      </motion.h2>
+
+      <motion.p
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.12 }}
+        className="mt-2 text-slate-600"
+      >
+        {practiceMode
+          ? "Nice work sharpening your memory."
+          : goalMet
+            ? `${habit.reviewsToday}/${dailyGoal} cards today · ${habit.streak} day streak`
+            : `You reviewed ${total} card${total === 1 ? "" : "s"} this session.`}
+      </motion.p>
+
+      {total > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.16 }}
+          className="mt-5 grid w-full max-w-xs grid-cols-2 gap-3"
+        >
+          <div className="rounded-xl bg-emerald-50 p-3">
+            <p className="text-2xl font-black text-emerald-700">{sessionStats.known}</p>
+            <p className="text-[10px] font-bold uppercase text-emerald-600">I know</p>
+          </div>
+          <div className="rounded-xl bg-red-50 p-3">
+            <p className="text-2xl font-black text-red-700">{sessionStats.notYet}</p>
+            <p className="text-[10px] font-bold uppercase text-red-600">Not yet</p>
+          </div>
+        </motion.div>
+      )}
+
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.2 }}
+        className="mt-6 flex w-full max-w-xs flex-col gap-2"
+      >
+        {!practiceMode && todayNotYetCount > 0 && (
+          <button
+            onClick={onPracticeNotYet}
+            className="rounded-xl bg-slate-950 px-4 py-3 text-sm font-black text-white transition hover:bg-slate-800"
+          >
+            Practice Not yet ({todayNotYetCount})
+          </button>
+        )}
+        {canKeepStudying && onKeepStudying && (
+          <button
+            onClick={onKeepStudying}
+            className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-700 transition hover:bg-slate-50"
+          >
+            Keep practicing
+          </button>
+        )}
+        <button
+          onClick={practiceMode ? onBackToJournal : onDone}
+          className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-700 transition hover:bg-slate-50"
+        >
+          {practiceMode ? "Back to journal" : "Done"}
+        </button>
+      </motion.div>
+    </div>
+  );
+}
+
 // ==================== BOTTOM NAV ====================
-function BottomNav({ activeTab, onTabChange }: { activeTab: Tab; onTabChange: (tab: Tab) => void }) {
+function BottomNav({
+  activeTab,
+  onTabChange,
+  studyBadgeCount,
+}: {
+  activeTab: Tab;
+  onTabChange: (tab: Tab) => void;
+  studyBadgeCount: number;
+}) {
   const tabs: { id: Tab; icon: typeof Home; label: string }[] = [
     { id: "home", icon: Home, label: "Home" },
     { id: "study", icon: BookOpen, label: "Study" },
@@ -279,7 +432,14 @@ function BottomNav({ activeTab, onTabChange }: { activeTab: Tab; onTabChange: (t
                 isActive ? "text-slate-950" : "text-slate-400"
               }`}
             >
-              <Icon className="h-6 w-6" strokeWidth={isActive ? 2.5 : 2} />
+              <div className="relative">
+                <Icon className="h-6 w-6" strokeWidth={isActive ? 2.5 : 2} />
+                {tab.id === "study" && studyBadgeCount > 0 && (
+                  <span className="absolute -right-2 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-orange-500 px-1 text-[9px] font-black text-white">
+                    {studyBadgeCount > 99 ? "99+" : studyBadgeCount}
+                  </span>
+                )}
+              </div>
               <span className={`text-[10px] font-bold ${isActive ? "text-slate-950" : "text-slate-400"}`}>
                 {tab.label}
               </span>
@@ -309,6 +469,14 @@ function StudyScreen({
   onToggleCategory,
   practiceMode,
   onExitPractice,
+  sessionStats,
+  habit,
+  dailyGoal,
+  todayNotYetCount,
+  onSessionDone,
+  onPracticeNotYetToday,
+  extraDueCount,
+  onLoadExtraPractice,
 }: {
   dueWords: AppWord[];
   progress: ProgressMap;
@@ -320,9 +488,20 @@ function StudyScreen({
   onToggleCategory: (cat: Category | "All") => void;
   practiceMode: boolean;
   onExitPractice: () => void;
+  sessionStats: SessionStats;
+  habit: HabitStats;
+  dailyGoal: number;
+  todayNotYetCount: number;
+  onSessionDone: () => void;
+  onPracticeNotYetToday: () => void;
+  extraDueCount: number;
+  onLoadExtraPractice: () => void;
 }) {
   const [isFlipped, setIsFlipped] = useState(false);
+  const [focusMode, setFocusMode] = useState(false);
   const currentWord = dueWords[0];
+  const goalMet = habit.reviewsToday >= dailyGoal;
+  const sessionHadReviews = sessionStats.known + sessionStats.notYet > 0;
 
   const handleSwipe = (direction: "left" | "right") => {
     if (!currentWord) return;
@@ -331,31 +510,39 @@ function StudyScreen({
   };
 
   if (!currentWord) {
+    if (sessionHadReviews || practiceMode) {
+      return (
+        <SessionCompleteScreen
+          sessionStats={sessionStats}
+          habit={habit}
+          dailyGoal={dailyGoal}
+          goalMet={goalMet}
+          practiceMode={practiceMode}
+          todayNotYetCount={todayNotYetCount}
+          onDone={onSessionDone}
+          onPracticeNotYet={onPracticeNotYetToday}
+          onBackToJournal={onExitPractice}
+          onKeepStudying={extraDueCount > 0 ? onLoadExtraPractice : undefined}
+          canKeepStudying={!practiceMode && goalMet && extraDueCount > 0}
+        />
+      );
+    }
+
     return (
       <div className="flex h-full flex-col items-center justify-center px-6 text-center">
         <motion.div
-          initial={{ scale: 0.8, opacity: 0 }}
+          initial={{ scale: 0.92, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
+          transition={{ type: "spring", stiffness: 260, damping: 22 }}
           className="rounded-full bg-emerald-100 p-6"
         >
           <CheckCircle2 className="h-12 w-12 text-emerald-600" />
         </motion.div>
         <h2 className="mt-6 text-2xl font-black text-slate-950">All caught up!</h2>
         <p className="mt-2 text-slate-600">
-          {practiceMode
-            ? "Practice session complete. Great work."
-            : "No cards due right now. Add words from Explore, or change category and try again later."}
+          No cards due right now. Add words from Explore, or change category and try again later.
         </p>
-        {practiceMode && (
-          <button
-            onClick={onExitPractice}
-            className="mt-4 rounded-xl bg-slate-950 px-4 py-2 text-sm font-black text-white"
-          >
-            Back to journal
-          </button>
-        )}
-        
-        {/* Category switcher */}
+
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           {(["All", ...CATEGORIES] as const).map((cat) => (
             <button
@@ -376,66 +563,75 @@ function StudyScreen({
   }
 
   return (
-    <div className="flex h-full flex-col px-4 pb-24 pt-4">
-      {/* Top controls */}
-      <div className="mb-4 flex flex-col gap-3">
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-bold text-slate-600">
-            {dueWords.length} cards remaining {practiceMode ? "(Practice mode)" : ""}
-          </span>
-          <div className="flex items-center gap-2">
-            {practiceMode && (
-              <button
-                onClick={onExitPractice}
-                className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600"
-              >
-                Exit
-              </button>
-            )}
-            {!practiceMode && (
-              <button
-                onClick={onShuffle}
-                className="flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-sm transition hover:bg-slate-100"
-                title="Shuffle cards"
-              >
-                <Shuffle className="h-4 w-4" />
-              </button>
-            )}
-            <button
-              onClick={onToggleReverse}
-              className={`flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-bold transition ${
-                isReverse
-                  ? "bg-violet-100 text-violet-700"
-                  : "bg-white text-slate-600 shadow-sm hover:bg-slate-100"
-              }`}
-            >
-              <ArrowLeftRight className="h-3.5 w-3.5" />
-              {isReverse ? "HE → EN" : "EN → HE"}
-            </button>
-          </div>
+    <div className={`flex h-full flex-col px-4 pb-24 ${focusMode ? "pt-2" : "pt-4"}`}>
+      {focusMode ? (
+        <div className="mb-2 flex justify-end">
+          <button
+            onClick={() => setFocusMode(false)}
+            className="flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 shadow-sm"
+          >
+            <Minimize2 className="h-3.5 w-3.5" />
+            Exit focus
+          </button>
         </div>
-
-        {/* Horizontal category filtering in study view */}
-        {!practiceMode && (
-          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-            {(["All", ...CATEGORIES] as const).map((cat) => (
+      ) : (
+        <div className="mb-4 flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-bold text-slate-600">
+              {dueWords.length} cards remaining {practiceMode ? "(Practice mode)" : ""}
+            </span>
+            <div className="flex items-center gap-2">
+              {practiceMode && (
+                <button
+                  onClick={onExitPractice}
+                  className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600"
+                >
+                  Exit
+                </button>
+              )}
+              {!practiceMode && (
+                <button
+                  onClick={onShuffle}
+                  className="flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-sm transition hover:bg-slate-100"
+                  title="Shuffle cards"
+                >
+                  <Shuffle className="h-4 w-4" />
+                </button>
+              )}
               <button
-                key={cat}
-                onClick={() => onToggleCategory(cat)}
-                className={`whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-bold transition ${
-                  selectedCategory === cat
-                    ? "bg-slate-950 text-white"
-                    : "bg-white text-slate-600 border border-slate-200 shadow-sm hover:bg-slate-50"
+                onClick={onToggleReverse}
+                className={`flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-bold transition ${
+                  isReverse
+                    ? "bg-violet-100 text-violet-700"
+                    : "bg-white text-slate-600 shadow-sm hover:bg-slate-100"
                 }`}
               >
-                {cat}
+                <ArrowLeftRight className="h-3.5 w-3.5" />
+                {isReverse ? "HE → EN" : "EN → HE"}
               </button>
-            ))}
+            </div>
           </div>
-        )}
-      </div>
 
-      {/* Card stack */}
+          {!practiceMode && (
+            <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+              {(["All", ...CATEGORIES] as const).map((cat) => (
+                <button
+                  key={cat}
+                  onClick={() => onToggleCategory(cat)}
+                  className={`whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-bold transition ${
+                    selectedCategory === cat
+                      ? "bg-slate-950 text-white"
+                      : "bg-white text-slate-600 border border-slate-200 shadow-sm hover:bg-slate-50"
+                  }`}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="flex flex-1 items-center justify-center">
         <AnimatePresence mode="popLayout">
           <SwipeCard
@@ -446,28 +642,31 @@ function StudyScreen({
             onFlip={() => setIsFlipped(!isFlipped)}
             isFlipped={isFlipped}
             isReverse={isReverse}
+            showFocusButton={!focusMode}
+            onEnterFocus={() => setFocusMode(true)}
           />
         </AnimatePresence>
       </div>
 
-      {/* Manual buttons */}
       <div className="mt-6 flex items-center justify-center gap-6">
-        <button
+        <motion.button
+          whileTap={{ scale: 0.94 }}
           onClick={() => handleSwipe("left")}
-          className="flex h-16 w-16 items-center justify-center rounded-full bg-red-500 text-white shadow-lg transition hover:scale-105 active:scale-95"
+          className="flex h-16 w-16 items-center justify-center rounded-full bg-red-500 text-white shadow-lg transition hover:scale-105"
         >
           <X className="h-7 w-7" />
-        </button>
+        </motion.button>
         <div className="text-center text-xs text-slate-400">
           <p>{SWIPE_LEFT_LABEL}</p>
           <p className="mt-0.5">{SWIPE_RIGHT_LABEL}</p>
         </div>
-        <button
+        <motion.button
+          whileTap={{ scale: 0.94 }}
           onClick={() => handleSwipe("right")}
-          className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500 text-white shadow-lg transition hover:scale-105 active:scale-95"
+          className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500 text-white shadow-lg transition hover:scale-105"
         >
           <Check className="h-7 w-7" />
-        </button>
+        </motion.button>
       </div>
     </div>
   );
@@ -537,17 +736,26 @@ function HomeScreen({
             </p>
           </div>
           <div className="flex flex-col items-center rounded-xl bg-white/80 px-4 py-2">
-            <Flame className={`h-6 w-6 ${habit.streak > 0 ? "text-orange-500" : "text-slate-300"}`} />
+            {habit.streak > 0 ? (
+              <motion.div
+                animate={{ scale: [1, 1.05, 1] }}
+                transition={{ duration: 2.8, repeat: Infinity, ease: "easeInOut" }}
+              >
+                <Flame className="h-6 w-6 text-orange-500" />
+              </motion.div>
+            ) : (
+              <Flame className="h-6 w-6 text-slate-300" />
+            )}
             <p className="mt-1 text-2xl font-black text-slate-950">{habit.streak}</p>
             <p className="text-[10px] font-bold uppercase text-slate-500">day streak</p>
           </div>
         </div>
         <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-white/70">
           <motion.div
-            className="h-full rounded-full bg-orange-500"
+            className={`h-full rounded-full ${goalMet ? "bg-emerald-500" : "bg-orange-500"}`}
             initial={{ width: 0 }}
             animate={{ width: `${todayProgress}%` }}
-            transition={{ duration: 0.5 }}
+            transition={{ duration: 0.5, ease: "easeOut" }}
           />
         </div>
       </div>
@@ -1240,6 +1448,8 @@ export default function App() {
   );
   const [studyLog, setStudyLog] = useState<StudyLog>(() => bootstrapSnapshot.studyLog ?? {});
   const [practiceQueueIds, setPracticeQueueIds] = useState<string[] | null>(null);
+  const [sessionStats, setSessionStats] = useState<SessionStats>({ known: 0, notYet: 0 });
+  const [bonusStudyActive, setBonusStudyActive] = useState(false);
   const [shuffleSeed, setShuffleSeed] = useState(0);
   const [quickWord, setQuickWord] = useState("");
   const [quickState, setQuickState] = useState<QuickState>("idle");
@@ -1376,11 +1586,14 @@ export default function App() {
     const goal = settings.dailyGoal;
     const remaining = Math.max(0, goal - habit.reviewsToday);
     const goalMet = habit.reviewsToday >= goal;
+    if (bonusStudyActive && goalMet) {
+      return dueWords.slice(0, Math.min(dueWords.length, 30));
+    }
     const limit = goalMet
       ? Math.min(dueWords.length, 30)
       : Math.min(dueWords.length, remaining > 0 ? remaining : goal);
     return dueWords.slice(0, limit);
-  }, [dueWords, habit.reviewsToday, settings.dailyGoal]);
+  }, [dueWords, habit.reviewsToday, settings.dailyGoal, bonusStudyActive]);
 
   const wordsById = useMemo(() => {
     const map = new Map<string, AppWord>();
@@ -1394,6 +1607,23 @@ export default function App() {
       .map((id) => wordsById.get(id))
       .filter((value): value is AppWord => Boolean(value));
   }, [practiceQueueIds, wordsById]);
+
+  const studyBadgeCount = useMemo(() => {
+    if (practiceQueueIds) return practiceQueueIds.length;
+    if (habit.reviewsToday >= settings.dailyGoal && !bonusStudyActive) return 0;
+    return studyWords.length;
+  }, [
+    practiceQueueIds,
+    habit.reviewsToday,
+    settings.dailyGoal,
+    bonusStudyActive,
+    studyWords.length,
+  ]);
+
+  const todayNotYetCount = useMemo(() => {
+    const today = dayKeyFromDate();
+    return summarizeDay(studyLog, today).notYetWordIds.length;
+  }, [studyLog]);
 
   const activeStudyWords = practiceQueueIds ? practiceWords : studyWords;
 
@@ -1412,12 +1642,23 @@ export default function App() {
     ? Math.round((statusCounts.mastered / deckCount) * 100)
     : 0;
 
+  useEffect(() => {
+    if (activeTab !== "study") return;
+    setSessionStats({ known: 0, notYet: 0 });
+    setBonusStudyActive(false);
+  }, [activeTab]);
+
   const handleSwipe = (wordId: string, direction: "left" | "right") => {
     const rating: ReviewRating = direction === "right" ? "good" : "again";
     const nextProgress = getNextProgress(progress[wordId], rating);
     setProgress((current) => ({ ...current, [wordId]: nextProgress }));
     setHabit((current) => recordStudyReview(current, settings.dailyGoal));
     setStudyLog((current) => logStudyReview(current, wordId, rating));
+    setSessionStats((current) =>
+      direction === "right"
+        ? { ...current, known: current.known + 1 }
+        : { ...current, notYet: current.notYet + 1 },
+    );
     if (practiceQueueIds) {
       setPracticeQueueIds((current) => (current ? current.filter((id) => id !== wordId) : null));
     }
@@ -1432,6 +1673,7 @@ export default function App() {
   const handlePracticeDayNotYet = (dayKey: string) => {
     const summary = summarizeDay(studyLog, dayKey);
     if (summary.notYetWordIds.length === 0) return;
+    setSessionStats({ known: 0, notYet: 0 });
     setPracticeQueueIds(summary.notYetWordIds);
     setActiveTab("study");
   };
@@ -1444,6 +1686,7 @@ export default function App() {
     }
     const ids = Array.from(set);
     if (ids.length === 0) return;
+    setSessionStats({ known: 0, notYet: 0 });
     setPracticeQueueIds(ids);
     setActiveTab("study");
   };
@@ -1451,6 +1694,7 @@ export default function App() {
   const handlePracticeDayKnown = (dayKey: string) => {
     const summary = summarizeDay(studyLog, dayKey);
     if (summary.knownWordIds.length === 0) return;
+    setSessionStats({ known: 0, notYet: 0 });
     setPracticeQueueIds(summary.knownWordIds);
     setActiveTab("study");
   };
@@ -1463,8 +1707,28 @@ export default function App() {
     }
     const ids = Array.from(set);
     if (ids.length === 0) return;
+    setSessionStats({ known: 0, notYet: 0 });
     setPracticeQueueIds(ids);
     setActiveTab("study");
+  };
+
+  const handleSessionDone = () => {
+    setSessionStats({ known: 0, notYet: 0 });
+    setBonusStudyActive(false);
+    setActiveTab("home");
+  };
+
+  const handlePracticeNotYetToday = () => {
+    handlePracticeDayNotYet(dayKeyFromDate());
+  };
+
+  const handleLoadExtraPractice = () => {
+    setBonusStudyActive(true);
+    setSessionStats({ known: 0, notYet: 0 });
+    if (settings.selectedCategory !== "All") {
+      setSettings((current) => ({ ...current, selectedCategory: "All" }));
+    }
+    setShuffleSeed((seed) => seed + 1);
   };
 
   const handleAddWord = (wordId: string) => {
@@ -1549,6 +1813,8 @@ export default function App() {
     setHabit(DEFAULT_HABIT);
     setStudyLog({});
     setPracticeQueueIds(null);
+    setSessionStats({ known: 0, notYet: 0 });
+    setBonusStudyActive(false);
     setQuickState("idle");
     setQuickMessage("Progress reset");
     void clearAllLocalUserData();
@@ -1634,8 +1900,17 @@ export default function App() {
                 practiceMode={Boolean(practiceQueueIds)}
                 onExitPractice={() => {
                   setPracticeQueueIds(null);
+                  setSessionStats({ known: 0, notYet: 0 });
                   setActiveTab("journal");
                 }}
+                sessionStats={sessionStats}
+                habit={habit}
+                dailyGoal={settings.dailyGoal}
+                todayNotYetCount={todayNotYetCount}
+                onSessionDone={handleSessionDone}
+                onPracticeNotYetToday={handlePracticeNotYetToday}
+                extraDueCount={dueWords.length}
+                onLoadExtraPractice={handleLoadExtraPractice}
               />
             </motion.div>
           )}
@@ -1708,7 +1983,11 @@ export default function App() {
         </AnimatePresence>
       </main>
 
-      <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
+      <BottomNav
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        studyBadgeCount={studyBadgeCount}
+      />
 
       {/* Quick Add FAB */}
       <button
