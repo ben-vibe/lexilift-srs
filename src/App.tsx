@@ -1,8 +1,10 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion, useMotionValue, useTransform } from "framer-motion";
+import { DayPicker } from "react-day-picker";
 import {
   BookOpen,
   Brain,
+  CalendarDays,
   Check,
   CheckCircle2,
   Clock3,
@@ -22,6 +24,7 @@ import {
   X,
   ArrowLeftRight,
   Filter,
+  Flame,
   Shield,
   Trash2,
   LogOut,
@@ -34,12 +37,21 @@ import {
   persistUserState,
   readBootstrapSnapshot,
   type AppSettings,
+  type HabitStats,
   type PersistedCustomWord,
 } from "./lib/localPersistence";
+import { DEFAULT_HABIT, normalizeHabitForToday, recordStudyReview } from "./lib/habit";
+import {
+  DAILY_GOAL_OPTIONS,
+  STATUS_LABEL,
+  SWIPE_LEFT_LABEL,
+  SWIPE_RIGHT_LABEL,
+} from "./lib/labels";
+import { dayKeyFromDate, logStudyReview, type StudyLog } from "./lib/studyLog";
 import {
   getInitialProgress,
   getNextProgress,
-  isDue,
+  isStudyDue,
   type ProgressStatus,
   type ReviewRating,
   type WordProgress,
@@ -65,7 +77,7 @@ const triggerHaptic = (type: "light" | "medium" | "heavy" = "light") => {
   }
 };
 
-type Tab = "home" | "study" | "explore" | "profile";
+type Tab = "home" | "study" | "explore" | "journal" | "profile";
 type AppWord = SeedWord & { id: string; custom?: boolean };
 type ProgressMap = Record<string, WordProgress>;
 type QuickState = "idle" | "loading" | "linked" | "created" | "error";
@@ -150,7 +162,7 @@ function SwipeCard({
       >
         <div className="flex items-center gap-2 text-2xl font-black text-white">
           <X className="h-8 w-8" />
-          LEARN
+          {SWIPE_LEFT_LABEL}
         </div>
       </motion.div>
 
@@ -159,7 +171,7 @@ function SwipeCard({
         style={{ opacity: opacityRight }}
       >
         <div className="flex items-center gap-2 text-2xl font-black text-white">
-          KNOW
+          {SWIPE_RIGHT_LABEL}
           <Check className="h-8 w-8" />
         </div>
       </motion.div>
@@ -234,7 +246,7 @@ function SwipeCard({
             </div>
 
             <div className="text-center text-xs text-slate-400">
-              Status: {progress?.status || "new"} • Interval: {progress?.interval || 0}d
+              {STATUS_LABEL[progress?.status ?? "new"]} • Next in {progress?.interval || 0}d
             </div>
           </div>
         )}
@@ -249,6 +261,7 @@ function BottomNav({ activeTab, onTabChange }: { activeTab: Tab; onTabChange: (t
     { id: "home", icon: Home, label: "Home" },
     { id: "study", icon: BookOpen, label: "Study" },
     { id: "explore", icon: Grid3X3, label: "Explore" },
+    { id: "journal", icon: CalendarDays, label: "Journal" },
     { id: "profile", icon: User, label: "Profile" },
   ];
 
@@ -294,6 +307,8 @@ function StudyScreen({
   onShuffle,
   selectedCategory,
   onToggleCategory,
+  practiceMode,
+  onExitPractice,
 }: {
   dueWords: AppWord[];
   progress: ProgressMap;
@@ -303,6 +318,8 @@ function StudyScreen({
   onShuffle: () => void;
   selectedCategory: Category | "All";
   onToggleCategory: (cat: Category | "All") => void;
+  practiceMode: boolean;
+  onExitPractice: () => void;
 }) {
   const [isFlipped, setIsFlipped] = useState(false);
   const currentWord = dueWords[0];
@@ -324,7 +341,19 @@ function StudyScreen({
           <CheckCircle2 className="h-12 w-12 text-emerald-600" />
         </motion.div>
         <h2 className="mt-6 text-2xl font-black text-slate-950">All caught up!</h2>
-        <p className="mt-2 text-slate-600">No cards due for review. Adjust category or check back later.</p>
+        <p className="mt-2 text-slate-600">
+          {practiceMode
+            ? "Practice session complete. Great work."
+            : "No cards due right now. Add words from Explore, or change category and try again later."}
+        </p>
+        {practiceMode && (
+          <button
+            onClick={onExitPractice}
+            className="mt-4 rounded-xl bg-slate-950 px-4 py-2 text-sm font-black text-white"
+          >
+            Back to journal
+          </button>
+        )}
         
         {/* Category switcher */}
         <div className="mt-6 flex flex-wrap justify-center gap-2">
@@ -351,15 +380,27 @@ function StudyScreen({
       {/* Top controls */}
       <div className="mb-4 flex flex-col gap-3">
         <div className="flex items-center justify-between">
-          <span className="text-sm font-bold text-slate-600">{dueWords.length} cards remaining</span>
+          <span className="text-sm font-bold text-slate-600">
+            {dueWords.length} cards remaining {practiceMode ? "(Practice mode)" : ""}
+          </span>
           <div className="flex items-center gap-2">
-            <button
-              onClick={onShuffle}
-              className="flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-sm transition hover:bg-slate-100"
-              title="Shuffle cards"
-            >
-              <Shuffle className="h-4 w-4" />
-            </button>
+            {practiceMode && (
+              <button
+                onClick={onExitPractice}
+                className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600"
+              >
+                Exit
+              </button>
+            )}
+            {!practiceMode && (
+              <button
+                onClick={onShuffle}
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-sm transition hover:bg-slate-100"
+                title="Shuffle cards"
+              >
+                <Shuffle className="h-4 w-4" />
+              </button>
+            )}
             <button
               onClick={onToggleReverse}
               className={`flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-bold transition ${
@@ -375,21 +416,23 @@ function StudyScreen({
         </div>
 
         {/* Horizontal category filtering in study view */}
-        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-          {(["All", ...CATEGORIES] as const).map((cat) => (
-            <button
-              key={cat}
-              onClick={() => onToggleCategory(cat)}
-              className={`whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-bold transition ${
-                selectedCategory === cat
-                  ? "bg-slate-950 text-white"
-                  : "bg-white text-slate-600 border border-slate-200 shadow-sm hover:bg-slate-50"
-              }`}
-            >
-              {cat}
-            </button>
-          ))}
-        </div>
+        {!practiceMode && (
+          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+            {(["All", ...CATEGORIES] as const).map((cat) => (
+              <button
+                key={cat}
+                onClick={() => onToggleCategory(cat)}
+                className={`whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-bold transition ${
+                  selectedCategory === cat
+                    ? "bg-slate-950 text-white"
+                    : "bg-white text-slate-600 border border-slate-200 shadow-sm hover:bg-slate-50"
+                }`}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Card stack */}
@@ -416,8 +459,8 @@ function StudyScreen({
           <X className="h-7 w-7" />
         </button>
         <div className="text-center text-xs text-slate-400">
-          <p>Don't know</p>
-          <p className="mt-0.5">Know</p>
+          <p>{SWIPE_LEFT_LABEL}</p>
+          <p className="mt-0.5">{SWIPE_RIGHT_LABEL}</p>
         </div>
         <button
           onClick={() => handleSwipe("right")}
@@ -434,26 +477,35 @@ function StudyScreen({
 function HomeScreen({
   statusCounts,
   totalWords,
-  masteredPercent,
+  knownPercent,
   dueWords,
-  studiedToday,
+  studyQueueCount,
+  habit,
+  dailyGoal,
+  deckCount,
   customWords,
   onStartStudy,
   onReset,
 }: {
   statusCounts: Record<ProgressStatus, number>;
   totalWords: number;
-  masteredPercent: number;
+  knownPercent: number;
   dueWords: AppWord[];
-  studiedToday: number;
+  studyQueueCount: number;
+  habit: HabitStats;
+  dailyGoal: number;
+  deckCount: number;
   customWords: AppWord[];
   onStartStudy: () => void;
   onReset: () => void;
 }) {
+  const goalMet = habit.reviewsToday >= dailyGoal;
+  const todayProgress = Math.min(100, Math.round((habit.reviewsToday / dailyGoal) * 100));
+
   const progressRows = [
-    { status: "new" as const, label: "New", icon: Layers3, color: "bg-slate-950", count: statusCounts.new },
-    { status: "learning" as const, label: "Learning", icon: Brain, color: "bg-amber-400", count: statusCounts.learning },
-    { status: "mastered" as const, label: "Mastered", icon: Trophy, color: "bg-emerald-500", count: statusCounts.mastered },
+    { status: "new" as const, label: STATUS_LABEL.new, icon: Layers3, color: "bg-slate-950", count: statusCounts.new },
+    { status: "learning" as const, label: STATUS_LABEL.learning, icon: Brain, color: "bg-amber-400", count: statusCounts.learning },
+    { status: "mastered" as const, label: STATUS_LABEL.mastered, icon: Trophy, color: "bg-emerald-500", count: statusCounts.mastered },
   ];
 
   return (
@@ -472,13 +524,41 @@ function HomeScreen({
         <h1 className="mt-1 text-4xl font-black text-slate-950">Dashboard</h1>
       </div>
 
+      <div className="mb-4 rounded-2xl bg-gradient-to-br from-amber-50 to-orange-100 p-5 shadow-sm">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-bold text-amber-900">Daily goal</p>
+            <p className="mt-1 text-3xl font-black text-slate-950">
+              {habit.reviewsToday}
+              <span className="text-lg font-bold text-slate-500"> / {dailyGoal}</span>
+            </p>
+            <p className="mt-1 text-xs text-amber-800">
+              {goalMet ? "Goal reached — nice work!" : `${dailyGoal - habit.reviewsToday} cards to go today`}
+            </p>
+          </div>
+          <div className="flex flex-col items-center rounded-xl bg-white/80 px-4 py-2">
+            <Flame className={`h-6 w-6 ${habit.streak > 0 ? "text-orange-500" : "text-slate-300"}`} />
+            <p className="mt-1 text-2xl font-black text-slate-950">{habit.streak}</p>
+            <p className="text-[10px] font-bold uppercase text-slate-500">day streak</p>
+          </div>
+        </div>
+        <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-white/70">
+          <motion.div
+            className="h-full rounded-full bg-orange-500"
+            initial={{ width: 0 }}
+            animate={{ width: `${todayProgress}%` }}
+            transition={{ duration: 0.5 }}
+          />
+        </div>
+      </div>
+
       <div className="mb-6 grid grid-cols-2 gap-4">
         <div className="rounded-2xl bg-slate-950 p-5 text-white">
-          <p className="text-sm font-medium text-white/60">Mastered</p>
-          <p className="mt-1 text-4xl font-black">{masteredPercent}%</p>
+          <p className="text-sm font-medium text-white/60">I know</p>
+          <p className="mt-1 text-4xl font-black">{knownPercent}%</p>
         </div>
         <div className="rounded-2xl bg-emerald-100 p-5 text-emerald-900">
-          <p className="text-sm font-medium text-emerald-700">Due now</p>
+          <p className="text-sm font-medium text-emerald-700">Due to practice</p>
           <p className="mt-1 text-4xl font-black">{dueWords.length}</p>
         </div>
       </div>
@@ -517,8 +597,8 @@ function HomeScreen({
         </div>
         <div className="rounded-xl bg-white p-4 text-center shadow-sm">
           <CheckCircle2 className="mx-auto h-5 w-5 text-slate-400" />
-          <p className="mt-2 text-xl font-black">{studiedToday}</p>
-          <p className="text-[10px] font-bold uppercase text-slate-400">Today</p>
+          <p className="mt-2 text-xl font-black">{deckCount}</p>
+          <p className="text-[10px] font-bold uppercase text-slate-400">In deck</p>
         </div>
         <div className="rounded-xl bg-white p-4 text-center shadow-sm">
           <Wand2 className="mx-auto h-5 w-5 text-slate-400" />
@@ -527,13 +607,25 @@ function HomeScreen({
         </div>
       </div>
 
+      {deckCount === 0 && (
+        <p className="mb-3 rounded-xl bg-amber-50 px-4 py-3 text-center text-sm font-medium text-amber-900">
+          Open Explore, pick a level, and tap + to add words to your deck.
+        </p>
+      )}
+
       <button
         onClick={onStartStudy}
-        disabled={dueWords.length === 0}
+        disabled={studyQueueCount === 0}
         className="mt-auto flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-slate-950 text-lg font-black text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
       >
         <BookOpen className="h-5 w-5" />
-        {dueWords.length > 0 ? `Study ${dueWords.length} cards` : "No cards due"}
+        {studyQueueCount > 0
+          ? goalMet
+            ? `Keep practicing (${studyQueueCount})`
+            : `Study today (${studyQueueCount})`
+          : deckCount === 0
+            ? "Add words in Explore"
+            : "No cards due"}
       </button>
 
       <button
@@ -677,7 +769,7 @@ function ExploreScreen({
                       ? "bg-amber-100 text-amber-700"
                       : "bg-slate-100 text-slate-600"
                   }`}>
-                    {status}
+                    {STATUS_LABEL[status ?? "new"]}
                   </span>
                 ) : (
                   <button
@@ -696,11 +788,202 @@ function ExploreScreen({
   );
 }
 
+type JournalDaySummary = {
+  totalReviews: number;
+  knownWordIds: string[];
+  notYetWordIds: string[];
+};
+
+function dayKeyToDate(dayKey: string): Date {
+  const [y, m, d] = dayKey.split("-").map(Number);
+  return new Date(y, (m || 1) - 1, d || 1, 12, 0, 0, 0);
+}
+
+function summarizeDay(log: StudyLog, dayKey: string): JournalDaySummary {
+  const entries = log[dayKey] ?? [];
+  const latestByWord = new Map<string, "known" | "not_yet">();
+  for (const entry of entries) {
+    latestByWord.set(entry.wordId, entry.outcome);
+  }
+
+  const knownWordIds: string[] = [];
+  const notYetWordIds: string[] = [];
+  for (const [wordId, outcome] of latestByWord.entries()) {
+    if (outcome === "known") knownWordIds.push(wordId);
+    else notYetWordIds.push(wordId);
+  }
+
+  return {
+    totalReviews: entries.length,
+    knownWordIds,
+    notYetWordIds,
+  };
+}
+
+function JournalScreen({
+  studyLog,
+  allWords,
+  dailyGoal,
+  onPracticeDayNotYet,
+  onPracticeAllNotYet,
+}: {
+  studyLog: StudyLog;
+  allWords: AppWord[];
+  dailyGoal: number;
+  onPracticeDayNotYet: (dayKey: string) => void;
+  onPracticeAllNotYet: () => void;
+}) {
+  const [selectedDay, setSelectedDay] = useState<Date>(new Date());
+
+  const wordsById = useMemo(() => {
+    const map = new Map<string, AppWord>();
+    for (const word of allWords) map.set(word.id, word);
+    return map;
+  }, [allWords]);
+
+  const dayKeys = useMemo(() => Object.keys(studyLog).sort(), [studyLog]);
+  const selectedDayKey = dayKeyFromDate(selectedDay);
+  const selectedSummary = useMemo(
+    () => summarizeDay(studyLog, selectedDayKey),
+    [selectedDayKey, studyLog],
+  );
+
+  const allNotYetIds = useMemo(() => {
+    const set = new Set<string>();
+    for (const key of dayKeys) {
+      const summary = summarizeDay(studyLog, key);
+      for (const id of summary.notYetWordIds) set.add(id);
+    }
+    return Array.from(set);
+  }, [dayKeys, studyLog]);
+
+  const dailyStats = useMemo(() => {
+    return dayKeys.map((dayKey) => {
+      const summary = summarizeDay(studyLog, dayKey);
+      return {
+        dayKey,
+        date: dayKeyToDate(dayKey),
+        reviews: summary.totalReviews,
+        goalDone: summary.totalReviews >= dailyGoal,
+        hasNotYet: summary.notYetWordIds.length > 0,
+      };
+    });
+  }, [dailyGoal, dayKeys, studyLog]);
+
+  const goalDoneDates = dailyStats.filter((d) => d.goalDone).map((d) => d.date);
+  const studiedDates = dailyStats.filter((d) => d.reviews > 0 && !d.goalDone).map((d) => d.date);
+
+  const knownWords = selectedSummary.knownWordIds
+    .map((id) => wordsById.get(id))
+    .filter((value): value is AppWord => Boolean(value));
+  const notYetWords = selectedSummary.notYetWordIds
+    .map((id) => wordsById.get(id))
+    .filter((value): value is AppWord => Boolean(value));
+
+  return (
+    <div className="h-full overflow-y-auto px-4 pb-28 pt-4">
+      <div className="mb-4">
+        <h1 className="text-3xl font-black text-slate-950">Journal</h1>
+        <p className="mt-1 text-sm text-slate-600">Track what you knew and what you did not know each day</p>
+      </div>
+
+      <div className="rounded-2xl bg-white p-4 shadow-sm">
+        <DayPicker
+          mode="single"
+          selected={selectedDay}
+          onSelect={(day) => day && setSelectedDay(day)}
+          modifiers={{
+            goalDone: goalDoneDates,
+            studied: studiedDates,
+          }}
+          modifiersClassNames={{
+            goalDone: "bg-emerald-500 text-white rounded-full",
+            studied: "bg-amber-200 text-slate-900 rounded-full",
+          }}
+          className="mx-auto"
+        />
+        <div className="mt-3 flex flex-wrap gap-3 text-xs">
+          <span className="flex items-center gap-1 text-slate-600"><span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />Goal done</span>
+          <span className="flex items-center gap-1 text-slate-600"><span className="h-2.5 w-2.5 rounded-full bg-amber-300" />Studied</span>
+        </div>
+      </div>
+
+      <div className="mt-4 rounded-2xl bg-white p-4 shadow-sm">
+        <p className="text-xs font-bold uppercase text-slate-500">{selectedDayKey}</p>
+        <div className="mt-2 grid grid-cols-3 gap-2">
+          <div className="rounded-xl bg-slate-100 p-3 text-center">
+            <p className="text-xl font-black">{selectedSummary.totalReviews}</p>
+            <p className="text-[10px] font-bold uppercase text-slate-500">Reviews</p>
+          </div>
+          <div className="rounded-xl bg-emerald-50 p-3 text-center">
+            <p className="text-xl font-black text-emerald-700">{knownWords.length}</p>
+            <p className="text-[10px] font-bold uppercase text-emerald-700">I know</p>
+          </div>
+          <div className="rounded-xl bg-red-50 p-3 text-center">
+            <p className="text-xl font-black text-red-700">{notYetWords.length}</p>
+            <p className="text-[10px] font-bold uppercase text-red-700">Not yet</p>
+          </div>
+        </div>
+
+        <div className="mt-3 grid grid-cols-1 gap-2">
+          <button
+            onClick={() => onPracticeDayNotYet(selectedDayKey)}
+            disabled={notYetWords.length === 0}
+            className="rounded-xl bg-slate-950 px-4 py-3 text-sm font-black text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+          >
+            Practice Not yet (this day)
+          </button>
+          <button
+            onClick={onPracticeAllNotYet}
+            disabled={allNotYetIds.length === 0}
+            className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300"
+          >
+            Practice Not yet (all days)
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-4 space-y-3">
+        <div className="rounded-2xl bg-white p-4 shadow-sm">
+          <h3 className="text-sm font-black text-emerald-700">I know</h3>
+          {knownWords.length === 0 ? (
+            <p className="mt-2 text-sm text-slate-500">No words marked as known on this day.</p>
+          ) : (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {knownWords.map((word) => (
+                <span key={word.id} className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">
+                  {word.word}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="rounded-2xl bg-white p-4 shadow-sm">
+          <h3 className="text-sm font-black text-red-700">Not yet</h3>
+          {notYetWords.length === 0 ? (
+            <p className="mt-2 text-sm text-slate-500">No words marked as not yet on this day.</p>
+          ) : (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {notYetWords.map((word) => (
+                <span key={word.id} className="rounded-full bg-red-100 px-3 py-1 text-xs font-bold text-red-700">
+                  {word.word}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ==================== PROFILE & SETTINGS ====================
 function ProfileScreen({
   isSupabaseConfigured,
   onDownloadSeed,
   userProfile,
+  dailyGoal,
+  onDailyGoalChange,
   onSignIn,
   onSignOut,
   onDeleteAccount,
@@ -708,6 +991,8 @@ function ProfileScreen({
   isSupabaseConfigured: boolean;
   onDownloadSeed: () => void;
   userProfile: any;
+  dailyGoal: number;
+  onDailyGoalChange: (goal: number) => void;
   onSignIn: () => void;
   onSignOut: () => void;
   onDeleteAccount: () => void;
@@ -757,6 +1042,29 @@ function ProfileScreen({
                 Google Log In
               </button>
             ) : null}
+          </div>
+        </div>
+
+        <div className="rounded-2xl bg-white p-5 shadow-sm">
+          <h3 className="mb-3 font-bold text-slate-950">Daily habit</h3>
+          <p className="mb-3 text-xs text-slate-600">
+            Aim for a steady session each day. Your streak counts when you hit this goal.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {DAILY_GOAL_OPTIONS.map((goal) => (
+              <button
+                key={goal}
+                type="button"
+                onClick={() => onDailyGoalChange(goal)}
+                className={`rounded-xl px-4 py-2.5 text-sm font-black transition ${
+                  dailyGoal === goal
+                    ? "bg-slate-950 text-white"
+                    : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                }`}
+              >
+                {goal} cards
+              </button>
+            ))}
           </div>
         </div>
 
@@ -880,6 +1188,14 @@ export default function App() {
     () => bootstrapSnapshot.customWords as AppWord[],
   );
   const [settings, setSettings] = useState<AppSettings>(() => bootstrapSnapshot.settings);
+  const [habit, setHabit] = useState<HabitStats>(() =>
+    normalizeHabitForToday(
+      bootstrapSnapshot.habit ?? DEFAULT_HABIT,
+      bootstrapSnapshot.settings.dailyGoal,
+    ),
+  );
+  const [studyLog, setStudyLog] = useState<StudyLog>(() => bootstrapSnapshot.studyLog ?? {});
+  const [practiceQueueIds, setPracticeQueueIds] = useState<string[] | null>(null);
   const [shuffleSeed, setShuffleSeed] = useState(0);
   const [quickWord, setQuickWord] = useState("");
   const [quickState, setQuickState] = useState<QuickState>("idle");
@@ -901,6 +1217,11 @@ export default function App() {
             current.isReverse !== false || current.selectedCategory !== "All";
           return hasSessionSettings ? current : snapshot.settings;
         });
+        setHabit((current) => {
+          const merged = snapshot.habit?.dayKey ? snapshot.habit : current;
+          return normalizeHabitForToday(merged, snapshot.settings.dailyGoal);
+        });
+        setStudyLog(snapshot.studyLog ?? {});
         setLocalPersistReady(true);
       })
       .catch((error) => {
@@ -958,8 +1279,10 @@ export default function App() {
       progress,
       customWords: customWords as PersistedCustomWord[],
       settings,
+      habit,
+      studyLog,
     });
-  }, [progress, customWords, settings, localPersistReady]);
+  }, [progress, customWords, settings, habit, studyLog, localPersistReady]);
 
   useEffect(() => {
     // If logged in, push updates to DB
@@ -993,8 +1316,10 @@ export default function App() {
 
   // Shuffle the due words randomly each time shuffleSeed changes.
   // Take Category filter into account
+  const deckCount = useMemo(() => Object.keys(progress).length, [progress]);
+
   const dueWords = useMemo(() => {
-    const due = allWords.filter((word) => isDue(progress[word.id], now));
+    const due = allWords.filter((word) => isStudyDue(progress[word.id], now));
     const catFiltered =
       settings.selectedCategory === "All"
         ? due
@@ -1003,35 +1328,80 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allWords, now, progress, shuffleSeed, settings.selectedCategory]);
 
+  const studyWords = useMemo(() => {
+    const goal = settings.dailyGoal;
+    const remaining = Math.max(0, goal - habit.reviewsToday);
+    const goalMet = habit.reviewsToday >= goal;
+    const limit = goalMet
+      ? Math.min(dueWords.length, 30)
+      : Math.min(dueWords.length, remaining > 0 ? remaining : goal);
+    return dueWords.slice(0, limit);
+  }, [dueWords, habit.reviewsToday, settings.dailyGoal]);
+
+  const wordsById = useMemo(() => {
+    const map = new Map<string, AppWord>();
+    for (const word of allWords) map.set(word.id, word);
+    return map;
+  }, [allWords]);
+
+  const practiceWords = useMemo(() => {
+    if (!practiceQueueIds) return [];
+    return practiceQueueIds
+      .map((id) => wordsById.get(id))
+      .filter((value): value is AppWord => Boolean(value));
+  }, [practiceQueueIds, wordsById]);
+
+  const activeStudyWords = practiceQueueIds ? practiceWords : studyWords;
+
   const statusCounts = useMemo(() => {
-    return allWords.reduce<Record<ProgressStatus, number>>(
-      (counts, word) => {
-        const status = progress[word.id]?.status ?? "new";
-        counts[status] += 1;
+    return Object.values(progress).reduce<Record<ProgressStatus, number>>(
+      (counts, item) => {
+        counts[item.status] += 1;
         return counts;
       },
       { new: 0, learning: 0, mastered: 0 },
     );
-  }, [allWords, progress]);
-
-  const studiedToday = useMemo(() => {
-    const today = new Date().toDateString();
-    return Object.values(progress).filter((item) => {
-      if (!item.last_reviewed) return false;
-      return new Date(item.last_reviewed).toDateString() === today;
-    }).length;
   }, [progress]);
 
   const totalWords = allWords.length;
-  const masteredPercent = totalWords ? Math.round((statusCounts.mastered / totalWords) * 100) : 0;
+  const knownPercent = deckCount
+    ? Math.round((statusCounts.mastered / deckCount) * 100)
+    : 0;
 
   const handleSwipe = (wordId: string, direction: "left" | "right") => {
     const rating: ReviewRating = direction === "right" ? "good" : "again";
-    setProgress((current) => ({
-      ...current,
-      [wordId]: getNextProgress(current[wordId], rating),
-    }));
+    const nextProgress = getNextProgress(progress[wordId], rating);
+    setProgress((current) => ({ ...current, [wordId]: nextProgress }));
+    setHabit((current) => recordStudyReview(current, settings.dailyGoal));
+    setStudyLog((current) => logStudyReview(current, wordId, rating));
+    if (practiceQueueIds) {
+      setPracticeQueueIds((current) => (current ? current.filter((id) => id !== wordId) : null));
+    }
     triggerHaptic(direction === "right" ? "medium" : "light");
+  };
+
+  const handleDailyGoalChange = (dailyGoal: number) => {
+    setSettings((current) => ({ ...current, dailyGoal }));
+    setHabit((current) => normalizeHabitForToday(current, dailyGoal));
+  };
+
+  const handlePracticeDayNotYet = (dayKey: string) => {
+    const summary = summarizeDay(studyLog, dayKey);
+    if (summary.notYetWordIds.length === 0) return;
+    setPracticeQueueIds(summary.notYetWordIds);
+    setActiveTab("study");
+  };
+
+  const handlePracticeAllNotYet = () => {
+    const set = new Set<string>();
+    for (const dayKey of Object.keys(studyLog)) {
+      const summary = summarizeDay(studyLog, dayKey);
+      for (const id of summary.notYetWordIds) set.add(id);
+    }
+    const ids = Array.from(set);
+    if (ids.length === 0) return;
+    setPracticeQueueIds(ids);
+    setActiveTab("study");
   };
 
   const handleAddWord = (wordId: string) => {
@@ -1113,6 +1483,9 @@ export default function App() {
   const resetDemo = () => {
     setProgress({});
     setCustomWords([]);
+    setHabit(DEFAULT_HABIT);
+    setStudyLog({});
+    setPracticeQueueIds(null);
     setQuickState("idle");
     setQuickMessage("Progress reset");
     void clearAllLocalUserData();
@@ -1165,9 +1538,12 @@ export default function App() {
               <HomeScreen
                 statusCounts={statusCounts}
                 totalWords={totalWords}
-                masteredPercent={masteredPercent}
+                knownPercent={knownPercent}
                 dueWords={dueWords}
-                studiedToday={studiedToday}
+                studyQueueCount={studyWords.length}
+                habit={habit}
+                dailyGoal={settings.dailyGoal}
+                deckCount={deckCount}
                 customWords={customWords}
                 onStartStudy={() => setActiveTab("study")}
                 onReset={resetDemo}
@@ -1184,7 +1560,7 @@ export default function App() {
               className="h-full"
             >
               <StudyScreen
-                dueWords={dueWords}
+                dueWords={activeStudyWords}
                 progress={progress}
                 onSwipe={handleSwipe}
                 isReverse={settings.isReverse}
@@ -1192,6 +1568,11 @@ export default function App() {
                 onShuffle={handleShuffle}
                 selectedCategory={settings.selectedCategory}
                 onToggleCategory={handleToggleCategory}
+                practiceMode={Boolean(practiceQueueIds)}
+                onExitPractice={() => {
+                  setPracticeQueueIds(null);
+                  setActiveTab("journal");
+                }}
               />
             </motion.div>
           )}
@@ -1233,9 +1614,29 @@ export default function App() {
                   URL.revokeObjectURL(url);
                 }}
                 userProfile={userProfile}
+                dailyGoal={settings.dailyGoal}
+                onDailyGoalChange={handleDailyGoalChange}
                 onSignIn={handleGoogleSignIn}
                 onSignOut={handleSignOut}
                 onDeleteAccount={handleDeleteAccount}
+              />
+            </motion.div>
+          )}
+
+          {activeTab === "journal" && (
+            <motion.div
+              key="journal"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="h-full"
+            >
+              <JournalScreen
+                studyLog={studyLog}
+                allWords={allWords}
+                dailyGoal={settings.dailyGoal}
+                onPracticeDayNotYet={handlePracticeDayNotYet}
+                onPracticeAllNotYet={handlePracticeAllNotYet}
               />
             </motion.div>
           )}

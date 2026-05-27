@@ -70,3 +70,10 @@ export function isDue(progress: WordProgress | undefined, now = new Date()) {
   if (!progress) return true;
   return new Date(progress.next_review).getTime() <= now.getTime();
 }
+
+/** In-deck words that still need practice (excludes mastered and words not added to the deck). */
+export function isStudyDue(progress: WordProgress | undefined, now = new Date()) {
+  if (!progress) return false;
+  if (progress.status === "mastered") return false;
+  return isDue(progress, now);
+}

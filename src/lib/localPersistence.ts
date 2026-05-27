@@ -1,5 +1,10 @@
 import type { Category } from "../data/allWords";
+import { DEFAULT_HABIT, hasHabitData, sanitizeHabit, type HabitStats } from "./habit";
+import { DEFAULT_DAILY_GOAL, DAILY_GOAL_OPTIONS } from "./labels";
+import { sanitizeStudyLog, type StudyLog } from "./studyLog";
 import type { WordProgress } from "./srs";
+
+export type { HabitStats } from "./habit";
 
 /** Legacy localStorage keys (v3) — kept for migration and mirror writes. */
 export const LEGACY_PROGRESS_KEY = "lexilift-progress-v3";
@@ -18,6 +23,7 @@ const MIRROR_BACKUP_KEY = "lexilift-snapshot-v4-backup";
 export type AppSettings = {
   isReverse: boolean;
   selectedCategory: Category | "All";
+  dailyGoal: number;
 };
 
 export type PersistedCustomWord = {
@@ -39,12 +45,15 @@ export type LocalSnapshot = {
   progress: ProgressMap;
   customWords: PersistedCustomWord[];
   settings: AppSettings;
+  habit: HabitStats;
+  studyLog: StudyLog;
   savedAt: string;
 };
 
 const DEFAULT_SETTINGS: AppSettings = {
   isReverse: false,
   selectedCategory: "All",
+  dailyGoal: DEFAULT_DAILY_GOAL,
 };
 
 const EMPTY_SNAPSHOT: LocalSnapshot = {
@@ -52,6 +61,8 @@ const EMPTY_SNAPSHOT: LocalSnapshot = {
   progress: {},
   customWords: [],
   settings: DEFAULT_SETTINGS,
+  habit: DEFAULT_HABIT,
+  studyLog: {},
   savedAt: new Date(0).toISOString(),
 };
 
@@ -123,9 +134,17 @@ function sanitizeSettings(raw: unknown): AppSettings {
     row.selectedCategory === "Daily Life"
       ? row.selectedCategory
       : DEFAULT_SETTINGS.selectedCategory;
+  const goalRaw = row.dailyGoal;
+  const dailyGoal =
+    typeof goalRaw === "number" &&
+    Number.isFinite(goalRaw) &&
+    (DAILY_GOAL_OPTIONS as readonly number[]).includes(goalRaw)
+      ? goalRaw
+      : DEFAULT_SETTINGS.dailyGoal;
   return {
     isReverse: Boolean(row.isReverse),
     selectedCategory,
+    dailyGoal,
   };
 }
 
@@ -174,6 +193,8 @@ function readLegacySnapshot(): LocalSnapshot {
     progress: progressParsed.value,
     customWords: customParsed.value,
     settings: settingsParsed.value,
+    habit: DEFAULT_HABIT,
+    studyLog: {},
     savedAt: new Date(0).toISOString(),
   };
 }
@@ -189,6 +210,8 @@ function readMirrorSnapshot(key: string): LocalSnapshot | null {
         progress: sanitizeProgress(row.progress),
         customWords: sanitizeCustomWords(row.customWords),
         settings: sanitizeSettings(row.settings),
+        habit: row.habit ? sanitizeHabit(row.habit) : DEFAULT_HABIT,
+        studyLog: sanitizeStudyLog(row.studyLog),
         savedAt: typeof row.savedAt === "string" ? row.savedAt : new Date(0).toISOString(),
       };
     },
@@ -214,6 +237,11 @@ function mergeSnapshots(base: LocalSnapshot, incoming: LocalSnapshot): LocalSnap
             : incoming.customWords
         : base.customWords,
     settings: preferIncoming ? incoming.settings : base.settings,
+    habit:
+      hasHabitData(incoming.habit) && (preferIncoming || !hasHabitData(base.habit))
+        ? incoming.habit
+        : base.habit,
+    studyLog: preferIncoming ? incoming.studyLog : base.studyLog,
     savedAt: preferIncoming ? incoming.savedAt : base.savedAt,
   };
 }
@@ -329,6 +357,8 @@ export async function loadPersistedSnapshot(): Promise<LocalSnapshot> {
         progress: sanitizeProgress(idbCurrent.progress),
         customWords: sanitizeCustomWords(idbCurrent.customWords),
         settings: sanitizeSettings(idbCurrent.settings),
+        habit: sanitizeHabit(idbCurrent.habit),
+        studyLog: sanitizeStudyLog(idbCurrent.studyLog),
         savedAt: typeof idbCurrent.savedAt === "string" ? idbCurrent.savedAt : new Date().toISOString(),
       });
     }
@@ -344,6 +374,8 @@ export async function loadPersistedSnapshot(): Promise<LocalSnapshot> {
         progress: sanitizeProgress(idbBackup.progress),
         customWords: sanitizeCustomWords(idbBackup.customWords),
         settings: sanitizeSettings(idbBackup.settings),
+        habit: sanitizeHabit(idbBackup.habit),
+        studyLog: sanitizeStudyLog(idbBackup.studyLog),
         savedAt: typeof idbBackup.savedAt === "string" ? idbBackup.savedAt : new Date(0).toISOString(),
       });
     }
@@ -364,6 +396,7 @@ export async function loadPersistedSnapshot(): Promise<LocalSnapshot> {
   const hasData =
     Object.keys(merged.progress).length > 0 ||
     merged.customWords.length > 0 ||
+    Object.keys(merged.studyLog).length > 0 ||
     merged.settings.isReverse ||
     merged.settings.selectedCategory !== "All";
 
@@ -390,6 +423,8 @@ export async function persistSnapshot(
     progress: sanitizeProgress(snapshot.progress),
     customWords: sanitizeCustomWords(snapshot.customWords),
     settings: sanitizeSettings(snapshot.settings),
+    habit: sanitizeHabit(snapshot.habit),
+    studyLog: sanitizeStudyLog(snapshot.studyLog),
     savedAt: new Date().toISOString(),
   };
 
@@ -420,12 +455,16 @@ export function persistUserState(state: {
   progress: ProgressMap;
   customWords: PersistedCustomWord[];
   settings: AppSettings;
+  habit: HabitStats;
+  studyLog: StudyLog;
 }): Promise<void> {
   return persistSnapshot({
     version: SNAPSHOT_VERSION,
     progress: sanitizeProgress(state.progress),
     customWords: sanitizeCustomWords(state.customWords),
     settings: sanitizeSettings(state.settings),
+    habit: sanitizeHabit(state.habit),
+    studyLog: sanitizeStudyLog(state.studyLog),
     savedAt: new Date().toISOString(),
   });
 }
